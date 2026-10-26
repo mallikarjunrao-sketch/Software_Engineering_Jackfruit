@@ -39,3 +39,4 @@ ruff check backend tests
 | Member 2 | Slots and availability |
 | Member 3 | Billing, payment and exit |
 | Member 4 | Platform, security and DevOps |
+Jira–GitHub integration verification: PARK-27.
