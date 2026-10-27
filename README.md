@@ -20,10 +20,28 @@ uvicorn backend.app.main:app --reload
 ```
 Open http://localhost:8000/health and http://localhost:8000/docs
 
+## Sprint 1 starter code
+Included and working: database models and seed data, password hashing, ANPR simulator, payment gateway simulator, availability endpoint, error format, tests.
+Stubbed (return 501 NOT_IMPLEMENTED until built): entries, exits, authorise, override, fee, payments.
+
+| Story | Where to work |
+|---|---|
+| PARK-9, 10, 11 (entry) | backend/app/routers/parking.py, create_entry |
+| PARK-12, 13 (slot allocation, atomic update) | new backend/app/services/slots.py, used by create_entry |
+| PARK-18 (fee) | new backend/app/services/billing.py, get_fee in routers/billing.py |
+| PARK-20, 21 (payment, receipt) | create_payment in routers/billing.py, simulators/gateway.py |
+| PARK-23, 29 (login, hashing) | new backend/app/routers/auth.py, backend/app/security.py |
+| PARK-24 (schema and seed) | backend/app/models.py, backend/app/seed.py |
+| PARK-25, 26 (simulators) | simulators/anpr.py, simulators/gateway.py |
+
+When you implement an endpoint, remove its row from tests/test_stubs.py and add real tests.
+
+Demo logins after first run: admin / admin123 and attendant / attendant123. Override with SEED_ADMIN_PASSWORD and SEED_ATTENDANT_PASSWORD.
+
 ## Test
 ```
-pytest --cov=backend
-ruff check backend tests
+pytest --cov=backend --cov=simulators
+ruff check backend simulators tests
 ```
 
 ## Workflow
@@ -39,4 +57,3 @@ ruff check backend tests
 | Member 2 | Slots and availability |
 | Member 3 | Billing, payment and exit |
 | Member 4 | Platform, security and DevOps |
-Jira–GitHub integration verification: PARK-27.

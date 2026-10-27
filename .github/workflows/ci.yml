@@ -18,11 +18,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Lint
-        run: ruff check backend tests
+        run: ruff check backend simulators tests
       - name: Unit and integration tests with coverage
-        run: pytest --cov=backend --cov-report=term-missing --cov-fail-under=70
+        run: pytest --cov=backend --cov=simulators --cov-report=term-missing --cov-fail-under=70
       - name: Static security scan
-        run: bandit -r backend -ll
+        run: bandit -r backend simulators -ll
       - name: Dependency vulnerability scan
         run: pip-audit -r requirements.txt
       - name: Build Docker image
