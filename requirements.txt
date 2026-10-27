@@ -8,3 +8,4 @@ bandit==1.7.10
 pip-audit==2.7.3
 sqlalchemy==2.1.6
 bcrypt==5.0.0
+pyjwt==2.15.1
