@@ -1,12 +1,23 @@
+
 import re
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 import simulators.anpr as anpr
+from backend.app.constants import SESSION_ACTIVE, SLOT_FREE
 from backend.app.database import get_db
 from backend.app.errors import ApiError, not_implemented
-from backend.app.schemas import EntryRequest, EntryResponse, ExitRequest, ExitResponse, GateResponse, OverrideRequest
+from backend.app.models import ParkingSession, Slot
+from backend.app.schemas import (
+    EntryRequest,
+    EntryResponse,
+    ExitRequest,
+    ExitResponse,
+    GateResponse,
+    OverrideRequest,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["parking"])
 
@@ -19,21 +30,68 @@ def resolve_plate(payload: EntryRequest) -> str:
         if not anpr.PLATE_PATTERN.fullmatch(plate):
             raise ApiError(422, "INVALID_PLATE", "Plate format is invalid")
         return plate
+
     if payload.imageRef:
         try:
             plate, confidence = anpr.recognise(payload.imageRef)
         except anpr.UnreadableImage:
             raise ApiError(422, "UNREADABLE_IMAGE", "Could not read the image")
+
         if confidence < CONFIDENCE_THRESHOLD:
             raise ApiError(422, "LOW_CONFIDENCE", "Enter the plate manually")
+
         return plate
+
     raise ApiError(422, "PLATE_REQUIRED", "Provide a plate or an image")
+
+
+def validate_entry_allowed(
+    db: Session,
+    plate: str,
+    vehicle_type: str,
+) -> None:
+    """Reject duplicate active entries and vehicles without a compatible free slot."""
+
+    active_session = db.scalar(
+        select(ParkingSession.id)
+        .where(
+            ParkingSession.plate == plate,
+            ParkingSession.status == SESSION_ACTIVE,
+        )
+        .limit(1)
+    )
+
+    if active_session is not None:
+        raise ApiError(
+            409,
+            "DUPLICATE_ACTIVE_ENTRY",
+            "This vehicle already has an active parking session",
+        )
+
+    available_slot = db.scalar(
+        select(Slot.id)
+        .where(
+            Slot.slot_type == vehicle_type,
+            Slot.status == SLOT_FREE,
+        )
+        .limit(1)
+    )
+
+    if available_slot is None:
+        raise ApiError(
+            409,
+            "PARKING_FULL",
+            "No compatible parking slots are available",
+        )
 
 
 @router.post("/entries", response_model=EntryResponse, status_code=201)
 def create_entry(payload: EntryRequest, db: Session = Depends(get_db)):
-    resolve_plate(payload)
-    raise not_implemented()  # PARK-10 and PARK-11 replace this
+    plate = resolve_plate(payload)
+    validate_entry_allowed(db, plate, payload.vehicleType)
+
+    # PARK-11 will create the session and issue the ticket.
+    raise not_implemented()
 
 
 @router.post("/exits", response_model=ExitResponse)
@@ -47,5 +105,9 @@ def authorise_exit(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/exits/{session_id}/override", response_model=GateResponse)
-def override_exit(session_id: int, payload: OverrideRequest, db: Session = Depends(get_db)):
+def override_exit(
+    session_id: int,
+    payload: OverrideRequest,
+    db: Session = Depends(get_db),
+):
     raise not_implemented()
