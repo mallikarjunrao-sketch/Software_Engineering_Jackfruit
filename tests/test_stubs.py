@@ -1,7 +1,6 @@
 import pytest
 
 CASES = [
-    ("post", "/api/v1/entries", {"plate": "KA01AB1234", "vehicleType": "car"}),
     ("post", "/api/v1/exits", {"plate": "KA01AB1234"}),
     ("post", "/api/v1/exits/1/authorise", None),
     ("post", "/api/v1/exits/1/override", {"reason": "lost ticket"}),

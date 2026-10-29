@@ -59,6 +59,7 @@ def test_full_car_capacity_does_not_block_other_vehicle_types(
         json={"plate": "KA01AB1234", "vehicleType": "two_wheeler"},
     )
 
-    # PARK-10 permits this entry; PARK-11 will implement its completion.
-    assert response.status_code == 501
-    assert response.json()["code"] == "NOT_IMPLEMENTED"
+    assert response.status_code == 201
+    assert response.json()["plate"] == "KA01AB1234"
+    assert response.json()["slotId"].startswith("B-")
+    assert response.json()["ticketNo"].startswith("TKT-")
