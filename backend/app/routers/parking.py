@@ -9,7 +9,8 @@ import simulators.anpr as anpr
 from backend.app.constants import SESSION_ACTIVE, SLOT_FREE
 from backend.app.database import get_db
 from backend.app.errors import ApiError, not_implemented
-from backend.app.models import ParkingSession, Slot
+from backend.app.models import ParkingSession, Slot, Vehicle
+from backend.app.services.slots import allocate_slot
 from backend.app.schemas import (
     EntryRequest,
     EntryResponse,
@@ -90,8 +91,36 @@ def create_entry(payload: EntryRequest, db: Session = Depends(get_db)):
     plate = resolve_plate(payload)
     validate_entry_allowed(db, plate, payload.vehicleType)
 
-    # PARK-11 will create the session and issue the ticket.
-    raise not_implemented()
+    # Store the vehicle before creating a session because sessions reference vehicles.
+    vehicle = db.get(Vehicle, plate)
+    if vehicle is None:
+        db.add(Vehicle(plate=plate, vehicle_type=payload.vehicleType))
+        db.flush()
+
+    # Re-check and claim a compatible free slot. The allocator atomically marks it occupied.
+    slot = allocate_slot(db, payload.vehicleType)
+    if slot is None:
+        db.rollback()
+        raise ApiError(409, "PARKING_FULL", "No compatible parking slots are available")
+
+    session = ParkingSession(plate=plate, slot_id=slot.id)
+    try:
+        db.add(session)
+        db.flush()
+        ticket_no = f"TKT-{session.id:06d}"
+        db.commit()
+        db.refresh(session)
+    except Exception:
+        db.rollback()
+        raise
+
+    return EntryResponse(
+        sessionId=session.id,
+        plate=session.plate,
+        slotId=session.slot_id,
+        entryTime=session.entry_time,
+        ticketNo=ticket_no,
+    )
 
 
 @router.post("/exits", response_model=ExitResponse)
