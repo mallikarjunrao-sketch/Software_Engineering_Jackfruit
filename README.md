@@ -57,3 +57,55 @@ ruff check backend simulators tests
 | Member 2 | Slots and availability |
 | Member 3 | Billing, payment and exit |
 | Member 4 | Platform, security and DevOps |
+
+
+## Jira ticket — PARK-15: Recognise Plate at Exit
+
+### What changed
+
+Implemented the `POST /api/v1/exits` workflow for APMS-F-007. The exit endpoint now accepts either a manually entered registration plate or an image reference from the exit ANPR simulator. It reuses the existing plate-recognition and validation logic used by vehicle entry, then retrieves the matching active parking session.
+
+- Manual registration numbers are normalised by removing whitespace and converting letters to uppercase.
+- Image references are processed by the existing `simulators.anpr.recognise()` service.
+- Recognition confidence below the existing 0.80 threshold is rejected with `LOW_CONFIDENCE`, allowing the caller to retry with a manually entered plate.
+- Unreadable images, missing input and invalid registration formats return the existing structured API errors.
+- The endpoint searches only for sessions with `ACTIVE` status. If no active session matches the recognised plate, it returns `404 SESSION_NOT_FOUND`.
+- The existing billing service is reused to calculate the current amount due for the response. No payment is initiated by this endpoint.
+
+### Exit API
+
+`POST /api/v1/exits`
+
+Example image-based request:
+
+```json
+{
+  "imageRef": "exit_cam_KA01AB1234.jpg"
+}
+```
+
+Example manual fallback request:
+
+```json
+{
+  "plate": "KA01AB1234"
+}
+```
+
+Successful response (`200 OK`) follows the existing `ExitResponse` schema:
+
+```json
+{
+  "sessionId": 1,
+  "amountDue": 50,
+  "status": "ACTIVE"
+}
+```
+
+### Scope and separation
+
+PARK-15 identifies the vehicle and retrieves its active session. It does not authorise or open the exit gate, close the session, release the parking slot, process payment, or implement kiosk UI. Those responsibilities remain with their respective exit-authorisation, slot-management, payment and frontend workflows.
+
+### Verification
+
+Added exit-recognition tests for image recognition, manual plate normalisation, missing/invalid/unreadable/low-confidence inputs, active-session lookup, missing active sessions and selection of an active session when historical paid sessions exist. The exit-start endpoint was also removed from the unimplemented-endpoint test list; the other exit endpoints remain stubs.

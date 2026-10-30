@@ -10,6 +10,7 @@ from backend.app.constants import SESSION_ACTIVE, SLOT_FREE
 from backend.app.database import get_db
 from backend.app.errors import ApiError, not_implemented
 from backend.app.models import ParkingSession, Slot, Vehicle
+from backend.app.services.billing import compute_session_fee
 from backend.app.services.slots import allocate_slot
 from backend.app.schemas import (
     EntryRequest,
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/api/v1", tags=["parking"])
 CONFIDENCE_THRESHOLD = 0.8
 
 
-def resolve_plate(payload: EntryRequest) -> str:
+def resolve_plate(payload: EntryRequest | ExitRequest) -> str:
     if payload.plate:
         plate = re.sub(r"\s+", "", payload.plate).upper()
         if not anpr.PLATE_PATTERN.fullmatch(plate):
@@ -125,7 +126,35 @@ def create_entry(payload: EntryRequest, db: Session = Depends(get_db)):
 
 @router.post("/exits", response_model=ExitResponse)
 def start_exit(payload: ExitRequest, db: Session = Depends(get_db)):
-    raise not_implemented()
+    """Recognise an exiting vehicle and retrieve its active parking session."""
+    plate = resolve_plate(payload)
+
+    session = db.scalar(
+        select(ParkingSession)
+        .where(
+            ParkingSession.plate == plate,
+            ParkingSession.status == SESSION_ACTIVE,
+        )
+        .order_by(ParkingSession.entry_time.desc(), ParkingSession.id.desc())
+        .limit(1)
+    )
+
+    if session is None:
+        raise ApiError(
+            404,
+            "SESSION_NOT_FOUND",
+            "No active parking session was found for this vehicle",
+        )
+
+    # Reuse the existing billing service to return the current amount due.
+    # Exit authorisation, payment and slot release remain separate workflows.
+    _, amount_due, _ = compute_session_fee(session.id, db)
+
+    return ExitResponse(
+        sessionId=session.id,
+        amountDue=amount_due,
+        status=session.status,
+    )
 
 
 @router.post("/exits/{session_id}/authorise", response_model=GateResponse)
