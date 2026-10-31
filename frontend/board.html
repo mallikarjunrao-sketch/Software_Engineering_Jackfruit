@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parking availability</title>
+<style>
+  :root { --bg: #0b1220; --panel: #131c2e; --text: #f5f7fb; --muted: #aab4c8; --ok: #2ecc71; --warn: #f5b942; --full: #ff5d5d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: Arial, Helvetica, sans-serif; padding: 24px; }
+  header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+  h1 { margin: 0; font-size: 2rem; }
+  #status { padding: 6px 14px; border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 1.1rem; }
+  #status.live { color: var(--ok); }
+  #status.polling { color: var(--warn); }
+  #grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+  .tile { background: var(--panel); border-radius: 16px; padding: 24px; border-left: 12px solid var(--ok); }
+  .tile.low { border-left-color: var(--warn); }
+  .tile.full { border-left-color: var(--full); }
+  .label { font-size: 1.4rem; color: var(--muted); }
+  .free { font-size: 4.5rem; font-weight: bold; line-height: 1.1; }
+  .total { font-size: 1.2rem; color: var(--muted); }
+  .state { margin-top: 8px; font-size: 1.3rem; font-weight: bold; }
+  footer { margin-top: 24px; color: var(--muted); font-size: 1.1rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Parking availability</h1>
+  <div id="status" role="status" aria-live="polite">Connecting</div>
+</header>
+<main id="grid" aria-live="polite"></main>
+<footer>Last updated: <span id="updated">-</span></footer>
+<script>
+  const LABELS = { car: "Car", two_wheeler: "Two-wheeler", ev: "EV", accessible: "Accessible" };
+  const ORDER = ["car", "two_wheeler", "ev", "accessible"];
+  const zone = new URLSearchParams(location.search).get("zone");
+  const query = zone ? "?zone=" + encodeURIComponent(zone) : "";
+  const grid = document.getElementById("grid");
+  const statusEl = document.getElementById("status");
+  const updatedEl = document.getElementById("updated");
+  let socket = null;
+  let pollTimer = null;
+  let retryDelay = 1000;
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = cls || "";
+  }
+
+  function render(data) {
+    const types = ORDER.filter(t => data.byType[t]).concat(Object.keys(data.byType).filter(t => !ORDER.includes(t)));
+    grid.replaceChildren();
+    types.forEach(type => {
+      const entry = data.byType[type];
+      const tile = document.createElement("section");
+      const ratio = entry.total ? entry.free / entry.total : 0;
+      tile.className = "tile" + (entry.free === 0 ? " full" : ratio <= 0.2 ? " low" : "");
+      const label = document.createElement("div");
+      label.className = "label";
+      label.textContent = LABELS[type] || type;
+      const free = document.createElement("div");
+      free.className = "free";
+      free.textContent = entry.free;
+      const total = document.createElement("div");
+      total.className = "total";
+      total.textContent = "free of " + entry.total;
+      const state = document.createElement("div");
+      state.className = "state";
+      state.textContent = entry.free === 0 ? "FULL" : ratio <= 0.2 ? "Almost full" : "Available";
+      tile.append(label, free, total, state);
+      grid.append(tile);
+    });
+    updatedEl.textContent = new Date(data.updatedAt).toLocaleTimeString();
+  }
+
+  async function poll() {
+    try {
+      const response = await fetch("/api/v1/availability" + query);
+      if (response.ok) render(await response.json());
+    } catch (error) {
+      setStatus("Offline", "");
+    }
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    setStatus("Polling every 2 s", "polling");
+    poll();
+    pollTimer = setInterval(poll, 2000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  function connect() {
+    const scheme = location.protocol === "https:" ? "wss://" : "ws://";
+    socket = new WebSocket(scheme + location.host + "/ws/availability" + query);
+    socket.onopen = () => { retryDelay = 1000; stopPolling(); setStatus("Live", "live"); };
+    socket.onmessage = event => render(JSON.parse(event.data));
+    socket.onclose = () => {
+      startPolling();
+      setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 15000);
+    };
+  }
+
+  connect();
+</script>
+</body>
+</html>
