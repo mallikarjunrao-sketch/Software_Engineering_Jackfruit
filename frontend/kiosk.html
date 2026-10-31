@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parking kiosk</title>
+<style>
+  :root { --bg: #0b1220; --panel: #131c2e; --text: #f5f7fb; --muted: #aab4c8; --ok: #2ecc71; --warn: #f5b942; --bad: #ff5d5d; --accent: #4da3ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: Arial, Helvetica, sans-serif; padding: 24px; }
+  header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 2rem; }
+  h2 { margin: 0 0 16px; font-size: 1.6rem; }
+  #gate { padding: 8px 18px; border-radius: 999px; font-size: 1.3rem; font-weight: bold; background: var(--panel); border: 3px solid var(--bad); color: var(--bad); }
+  #gate.open { border-color: var(--ok); color: var(--ok); }
+  nav { display: flex; gap: 12px; margin-bottom: 20px; }
+  nav button { flex: 1; font-size: 1.4rem; padding: 16px; border-radius: 12px; border: 2px solid var(--panel); background: var(--panel); color: var(--muted); cursor: pointer; }
+  nav button[aria-selected="true"] { border-color: var(--accent); color: var(--text); }
+  .panel { background: var(--panel); border-radius: 16px; padding: 24px; max-width: 720px; }
+  label { display: block; margin: 14px 0 6px; font-size: 1.2rem; color: var(--muted); }
+  input, select { width: 100%; font-size: 1.5rem; padding: 14px; border-radius: 10px; border: 2px solid #2a3652; background: var(--bg); color: var(--text); }
+  input:focus, select:focus, button:focus-visible { outline: 3px solid var(--accent); }
+  .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+  .actions button { font-size: 1.4rem; padding: 14px 24px; border-radius: 12px; border: 0; background: var(--accent); color: #04101f; font-weight: bold; cursor: pointer; }
+  .actions button.secondary { background: transparent; color: var(--text); border: 2px solid var(--muted); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #message { margin-top: 20px; padding: 16px; border-radius: 12px; font-size: 1.4rem; display: none; }
+  #message.ok { display: block; background: rgba(46, 204, 113, 0.15); border-left: 10px solid var(--ok); }
+  #message.warn { display: block; background: rgba(245, 185, 66, 0.15); border-left: 10px solid var(--warn); }
+  #message.bad { display: block; background: rgba(255, 93, 93, 0.15); border-left: 10px solid var(--bad); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; font-size: 1.4rem; margin: 12px 0 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-weight: bold; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Parking kiosk</h1>
+  <div id="gate" role="status" aria-live="polite">Gate CLOSED</div>
+</header>
+
+<nav role="tablist" aria-label="Kiosk mode">
+  <button id="tab-entry" role="tab" aria-selected="true" aria-controls="entry-panel">Entry</button>
+  <button id="tab-exit" role="tab" aria-selected="false" aria-controls="exit-panel">Exit</button>
+</nav>
+
+<main>
+  <section id="entry-panel" class="panel" role="tabpanel" aria-labelledby="tab-entry">
+    <h2>Vehicle entry</h2>
+    <label for="entry-image">Camera image (simulated ANPR)</label>
+    <input id="entry-image" placeholder="e.g. entry_cam_KA01AB1234.jpg" autocomplete="off">
+    <label for="entry-plate">Number plate (manual entry)</label>
+    <input id="entry-plate" placeholder="KA01AB1234" autocomplete="off" maxlength="14">
+    <label for="entry-type">Vehicle type</label>
+    <select id="entry-type">
+      <option value="car">Car</option>
+      <option value="two_wheeler">Two-wheeler</option>
+      <option value="ev">EV</option>
+      <option value="accessible">Accessible</option>
+    </select>
+    <div class="actions">
+      <button id="entry-go" type="button">Get ticket</button>
+      <button id="entry-reset" type="button" class="secondary">Clear</button>
+    </div>
+  </section>
+
+  <section id="exit-panel" class="panel hidden" role="tabpanel" aria-labelledby="tab-exit">
+    <h2>Vehicle exit</h2>
+    <div id="exit-step-plate">
+      <label for="exit-image">Camera image (simulated ANPR)</label>
+      <input id="exit-image" placeholder="e.g. exit_cam_KA01AB1234.jpg" autocomplete="off">
+      <label for="exit-plate">Number plate (manual entry)</label>
+      <input id="exit-plate" placeholder="KA01AB1234" autocomplete="off" maxlength="14">
+      <div class="actions">
+        <button id="exit-go" type="button">Find my session</button>
+        <button id="exit-reset" type="button" class="secondary">Clear</button>
+      </div>
+    </div>
+    <div id="exit-step-pay" class="hidden">
+      <dl>
+        <dt>Session</dt><dd id="exit-session"></dd>
+        <dt>Amount due</dt><dd id="exit-amount"></dd>
+      </dl>
+      <label for="exit-mode">Payment mode</label>
+      <select id="exit-mode">
+        <option value="UPI">UPI</option>
+        <option value="CARD">Card</option>
+        <option value="CASH">Cash</option>
+      </select>
+      <div class="actions">
+        <button id="exit-pay" type="button">Pay and open gate</button>
+        <button id="exit-cancel" type="button" class="secondary">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="message" role="alert"></div>
+</main>
+
+<script>
+  const API = "/api/v1";
+  const GATE_OPEN_MS = 5000;
+
+  const ERROR_TEXT = {
+    PLATE_REQUIRED: ["warn", "Enter the number plate or a camera image."],
+    INVALID_PLATE: ["warn", "That plate format is not valid. Example: KA01AB1234."],
+    UNREADABLE_IMAGE: ["warn", "The plate could not be read. Please type it in."],
+    LOW_CONFIDENCE: ["warn", "The plate was not clear. Please type it in."],
+    DUPLICATE_ACTIVE_ENTRY: ["bad", "Entry denied: this vehicle already has an active session."],
+    PARKING_FULL: ["bad", "Entry denied: no free slot for this vehicle type."],
+    SESSION_NOT_FOUND: ["bad", "No active parking session found for this vehicle."],
+    NOT_IMPLEMENTED: ["warn", "This service is not available yet. Please call an attendant."],
+    GATEWAY_TIMEOUT: ["warn", "Payment gateway timed out. Please try again."]
+  };
+
+  const $ = id => document.getElementById(id);
+  const gateEl = $("gate");
+  const messageEl = $("message");
+  let gateTimer = null;
+  let currentSession = null;
+
+  function showMessage(kind, text, details) {
+    messageEl.className = kind;
+    messageEl.replaceChildren();
+    const line = document.createElement("div");
+    line.textContent = text;
+    messageEl.append(line);
+    if (details) {
+      const dl = document.createElement("dl");
+      Object.entries(details).forEach(([key, value]) => {
+        const dt = document.createElement("dt");
+        dt.textContent = key;
+        const dd = document.createElement("dd");
+        dd.textContent = value;
+        dl.append(dt, dd);
+      });
+      messageEl.append(dl);
+    }
+  }
+
+  function clearMessage() {
+    messageEl.className = "";
+    messageEl.replaceChildren();
+  }
+
+  function setGate(state) {
+    gateEl.textContent = "Gate " + state;
+    gateEl.className = state === "OPEN" ? "open" : "";
+    if (gateTimer) clearTimeout(gateTimer);
+    if (state === "OPEN") gateTimer = setTimeout(() => setGate("CLOSED"), GATE_OPEN_MS);
+  }
+
+  async function call(method, path, body) {
+    let response;
+    try {
+      response = await fetch(API + path, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined
+      });
+    } catch (error) {
+      return { ok: false, code: "NETWORK", message: "Cannot reach the server." };
+    }
+    let data = null;
+    try { data = await response.json(); } catch (error) { data = null; }
+    if (response.ok) return { ok: true, data };
+    if (response.status === 422 && Array.isArray(data && data.detail)) {
+      return { ok: false, code: "PLATE_REQUIRED", message: "Check the details and try again." };
+    }
+    return { ok: false, code: data && data.code, message: data && data.message };
+  }
+
+  function showError(result) {
+    const mapped = ERROR_TEXT[result.code];
+    if (mapped) return showMessage(mapped[0], mapped[1]);
+    showMessage("bad", result.message || "Something went wrong. Please call an attendant.");
+  }
+
+  function plateBody(imageEl, plateEl) {
+    const plate = plateEl.value.trim();
+    const imageRef = imageEl.value.trim();
+    const body = {};
+    if (plate) body.plate = plate;
+    else if (imageRef) body.imageRef = imageRef;
+    return body;
+  }
+
+  function focusManualPlate(result, plateEl) {
+    if (result.code === "LOW_CONFIDENCE" || result.code === "UNREADABLE_IMAGE") plateEl.focus();
+  }
+
+  async function submitEntry() {
+    clearMessage();
+    const body = plateBody($("entry-image"), $("entry-plate"));
+    body.vehicleType = $("entry-type").value;
+    $("entry-go").disabled = true;
+    const result = await call("POST", "/entries", body);
+    $("entry-go").disabled = false;
+    if (!result.ok) {
+      showError(result);
+      focusManualPlate(result, $("entry-plate"));
+      return;
+    }
+    const ticket = result.data;
+    setGate("OPEN");
+    showMessage("ok", "Ticket issued. Gate open.", {
+      Ticket: ticket.ticketNo,
+      Plate: ticket.plate,
+      Slot: ticket.slotId,
+      Time: new Date(ticket.entryTime).toLocaleTimeString()
+    });
+  }
+
+  function resetEntry() {
+    $("entry-image").value = "";
+    $("entry-plate").value = "";
+    clearMessage();
+  }
+
+  function showExitStep(step) {
+    $("exit-step-plate").classList.toggle("hidden", step !== "plate");
+    $("exit-step-pay").classList.toggle("hidden", step !== "pay");
+  }
+
+  async function findSession() {
+    clearMessage();
+    const body = plateBody($("exit-image"), $("exit-plate"));
+    $("exit-go").disabled = true;
+    const result = await call("POST", "/exits", body);
+    $("exit-go").disabled = false;
+    if (!result.ok) {
+      showError(result);
+      focusManualPlate(result, $("exit-plate"));
+      return;
+    }
+    currentSession = result.data;
+    $("exit-session").textContent = "#" + currentSession.sessionId;
+    $("exit-amount").textContent = "Rs " + currentSession.amountDue;
+    showExitStep("pay");
+  }
+
+  async function payAndExit() {
+    if (!currentSession) return;
+    clearMessage();
+    $("exit-pay").disabled = true;
+    const payment = await call("POST", "/payments", {
+      sessionId: currentSession.sessionId,
+      mode: $("exit-mode").value,
+      amount: currentSession.amountDue
+    });
+    if (!payment.ok) {
+      $("exit-pay").disabled = false;
+      return showError(payment);
+    }
+    if (payment.data.status !== "SUCCESS") {
+      $("exit-pay").disabled = false;
+      return showMessage("bad", "Payment " + String(payment.data.status).toLowerCase() + ". Gate stays closed.");
+    }
+    const gate = await call("POST", "/exits/" + currentSession.sessionId + "/authorise");
+    $("exit-pay").disabled = false;
+    if (!gate.ok) return showError(gate);
+    setGate(gate.data.gate);
+    showMessage("ok", "Payment received. Gate open. Thank you!", {
+      Receipt: payment.data.receiptNo || "-"
+    });
+    cancelExit(true);
+  }
+
+  function cancelExit(keepMessage) {
+    currentSession = null;
+    $("exit-image").value = "";
+    $("exit-plate").value = "";
+    showExitStep("plate");
+    if (!keepMessage) clearMessage();
+  }
+
+  function selectTab(name) {
+    const entry = name === "entry";
+    $("tab-entry").setAttribute("aria-selected", String(entry));
+    $("tab-exit").setAttribute("aria-selected", String(!entry));
+    $("entry-panel").classList.toggle("hidden", !entry);
+    $("exit-panel").classList.toggle("hidden", entry);
+    clearMessage();
+  }
+
+  $("tab-entry").addEventListener("click", () => selectTab("entry"));
+  $("tab-exit").addEventListener("click", () => selectTab("exit"));
+  $("entry-go").addEventListener("click", submitEntry);
+  $("entry-reset").addEventListener("click", resetEntry);
+  $("exit-go").addEventListener("click", findSession);
+  $("exit-reset").addEventListener("click", () => { cancelExit(false); });
+  $("exit-pay").addEventListener("click", payAndExit);
+  $("exit-cancel").addEventListener("click", () => cancelExit(false));
+  if (location.hash === "#exit") selectTab("exit");
+</script>
+</body>
+</html>
