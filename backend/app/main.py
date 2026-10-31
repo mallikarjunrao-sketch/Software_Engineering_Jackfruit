@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from backend.app.database import Base, SessionLocal, engine
 from backend.app.errors import ApiError, api_error_handler
-from backend.app.routers import auth, availability, billing, parking, simulated
+from backend.app.routers import auth, availability, billing, kiosk, parking, simulated
 from backend.app.seed import seed_database
 
 
@@ -24,6 +24,7 @@ app.include_router(auth.router)
 app.include_router(availability.router)
 app.include_router(availability.live_router)
 app.include_router(simulated.router)
+app.include_router(kiosk.router)
 
 
 @app.get("/health")
