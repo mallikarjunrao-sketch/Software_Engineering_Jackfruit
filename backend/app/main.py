@@ -22,6 +22,7 @@ app.include_router(parking.router)
 app.include_router(billing.router)
 app.include_router(auth.router)
 app.include_router(availability.router)
+app.include_router(availability.live_router)
 app.include_router(simulated.router)
 
 

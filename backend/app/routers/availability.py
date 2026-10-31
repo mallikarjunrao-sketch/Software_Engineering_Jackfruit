@@ -1,28 +1,51 @@
-from datetime import datetime, timezone
+import asyncio
+import os
+from pathlib import Path
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import case, func, select
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from backend.app.constants import SLOT_FREE
 from backend.app.database import get_db
 from backend.app.errors import ApiError
-from backend.app.models import Slot, Zone
-from backend.app.schemas import AvailabilityEntry, AvailabilityResponse
+from backend.app.schemas import AvailabilityResponse
+from backend.app.services.availability import get_availability
+
+PUSH_INTERVAL_SECONDS = float(os.getenv("AVAILABILITY_PUSH_SECONDS", "1.0"))
+BOARD_PAGE = Path(__file__).resolve().parents[3] / "frontend" / "board.html"
 
 router = APIRouter(prefix="/api/v1", tags=["availability"])
+live_router = APIRouter(tags=["availability"])
 
 
 @router.get("/availability", response_model=AvailabilityResponse)
-def get_availability(zone: str | None = None, db: Session = Depends(get_db)):
-    query = (
-        select(Slot.slot_type, func.count(Slot.id), func.sum(case((Slot.status == SLOT_FREE, 1), else_=0)))
-        .join(Zone, Zone.id == Slot.zone_id)
-        .group_by(Slot.slot_type)
-    )
-    if zone is not None:
-        if db.scalar(select(Zone.id).where(Zone.name == zone)) is None:
-            raise ApiError(404, "ZONE_NOT_FOUND", "Zone not found")
-        query = query.where(Zone.name == zone)
-    by_type = {slot_type: AvailabilityEntry(total=total, free=free or 0) for slot_type, total, free in db.execute(query)}
-    return AvailabilityResponse(zone=zone, byType=by_type, updatedAt=datetime.now(timezone.utc))
+def read_availability(zone: str | None = None, db: Session = Depends(get_db)):
+    return get_availability(db, zone)
+
+
+@live_router.websocket("/ws/availability")
+async def availability_socket(websocket: WebSocket, zone: str | None = None, db: Session = Depends(get_db)):
+    try:
+        current = get_availability(db, zone)
+    except ApiError:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    await websocket.send_json(current.model_dump(mode="json"))
+    try:
+        while True:
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=PUSH_INTERVAL_SECONDS)
+            except asyncio.TimeoutError:
+                pass
+            latest = get_availability(db, zone)
+            if latest.byType != current.byType:
+                current = latest
+                await websocket.send_json(current.model_dump(mode="json"))
+    except WebSocketDisconnect:
+        return
+
+
+@live_router.get("/board", include_in_schema=False)
+def display_board():
+    return FileResponse(BOARD_PAGE, media_type="text/html")
