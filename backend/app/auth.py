@@ -2,13 +2,14 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.constants import ROLE_ADMIN, ROLE_ATTENDANT
 from backend.app.database import get_db
 from backend.app.errors import ApiError
-from backend.app.models import User
+from backend.app.models import AuditLog, User
 
 ALGORITHM = "HS256"
 TOKEN_MINUTES = 15
@@ -58,9 +59,28 @@ def get_current_user(
 
 
 def require_role(*roles: str):
-    def checker(user: User = Depends(get_current_user)) -> User:
+    def checker(
+        request: Request,
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        # The role is read from the database user, never from the token, so a
+        # forged or stale "role" claim cannot grant access.
         if user.role not in roles:
+            db.add(
+                AuditLog(
+                    user_id=user.id,
+                    action="ACCESS_DENIED",
+                    details=f"{request.method} {request.url.path} role={user.role} needs={'/'.join(roles)}",
+                )
+            )
+            db.commit()
             raise ApiError(403, "FORBIDDEN", "You do not have permission for this action")
         return user
 
     return checker
+
+
+# Ready-made dependencies for other routers (APMS-SR-003).
+require_admin = require_role(ROLE_ADMIN)
+require_staff = require_role(ROLE_ADMIN, ROLE_ATTENDANT)
