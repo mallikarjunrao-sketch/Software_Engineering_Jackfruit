@@ -8,6 +8,7 @@ from backend.app.database import get_db
 from backend.app.errors import ApiError
 from backend.app.models import User
 from backend.app.security import hash_password, verify_password
+from backend.app.services import audit
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -44,8 +45,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     password_hash = user.password_hash if user else _dummy_password_hash()
     password_ok = verify_password(payload.password, password_hash)
     if user is None or not password_ok:
+        # The typed username is not logged: people sometimes type their password into that field.
+        reason = "unknown username" if user is None else "wrong password"
+        audit.record(db, audit.LOGIN_FAILED, user.id if user else None, reason)
         # Same status and message for both cases, so attackers cannot tell which was wrong.
         raise ApiError(401, "INVALID_CREDENTIALS", "Invalid username or password")
+    audit.record(db, audit.LOGIN_SUCCESS, user.id, "login")
     return LoginResponse(token=create_token(user), role=user.role, expiresIn=EXPIRES_IN_SECONDS)
 
 

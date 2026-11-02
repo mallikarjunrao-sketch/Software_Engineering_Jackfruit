@@ -1,3 +1,6 @@
+import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import DatabaseError
 from datetime import datetime, timedelta, timezone
 
 from backend.app.constants import (
@@ -6,7 +9,7 @@ from backend.app.constants import (
     SESSION_ACTIVE,
     SESSION_PAID,
 )
-from backend.app.models import ParkingSession, Payment, Vehicle
+from backend.app.models import AuditLog, ParkingSession, Payment, Vehicle
 from backend.app.services.card_security import (
     inspect_database_for_card_data,
     mask_card_number,
@@ -200,22 +203,14 @@ def test_database_audit_detects_violations(db_session):
         txn_ref="4111111111111234",  # Raw PAN leak in txn_ref
         masked_ref="UNMASKED_REF",   # Missing '***' mask prefix
     )
-    db_session.add(bad_payment)
-
-    # Deliberately insert an AuditLog and Session with raw card leak
-    from backend.app.models import AuditLog
-    bad_audit = AuditLog(
-        action="TEST_LEAK",
-        user_id="test_user",
-        details="Card 4111111111111234 payment failed",
-    )
+    # Deliberately insert a session with a raw card leak
     bad_session = ParkingSession(
         plate="KA05LEAK01",
         slot_id="C-002",
         status=SESSION_ACTIVE,
         override_reason="Payment issue with 4111111111111234",
     )
-    db_session.add(bad_audit)
+    db_session.add(bad_payment)
     db_session.add(bad_session)
     db_session.commit()
 
@@ -223,18 +218,40 @@ def test_database_audit_detects_violations(db_session):
     assert report["compliant"] is False
     assert any("unmasked masked_ref" in v for v in report["violations"])
     assert any("raw card number" in v for v in report["violations"])
-    assert any("AuditLog" in v for v in report["violations"])
     assert any("Session" in v for v in report["violations"])
 
-    # Clean up the bad records
+    # Clean up the bad records (payments and sessions can be deleted)
     db_session.delete(bad_payment)
-    db_session.delete(bad_audit)
     db_session.delete(bad_session)
     db_session.commit()
 
     # Re-verify database is compliant
     clean_report = inspect_database_for_card_data(db_session)
     assert clean_report["compliant"] is True
+
+
+def test_database_audit_flags_card_data_in_audit_log(db_session):
+    """A card number in an audit entry is detected, and cannot be deleted (APMS-SR-004)."""
+    bad_audit = AuditLog(
+        action="TEST_LEAK",
+        user_id=None,
+        details="Card 4111111111111234 payment failed",
+    )
+    db_session.add(bad_audit)
+    db_session.commit()
+
+    report = inspect_database_for_card_data(db_session)
+    assert report["compliant"] is False
+    assert any("AuditLog" in v for v in report["violations"])
+
+    # The audit log is append-only, so the database refuses to delete the entry.
+    with pytest.raises(DatabaseError):
+        db_session.execute(text("DELETE FROM audit_log"))
+    db_session.rollback()
+
+    # The entry is still there, so the leak is still reported.
+    still_report = inspect_database_for_card_data(db_session)
+    assert still_report["compliant"] is False
 
 
 def test_sanitize_dict_with_embedded_card_and_non_digit_match():
@@ -248,4 +265,3 @@ def test_sanitize_dict_with_embedded_card_and_non_digit_match():
 
     # Short pattern inside redact_sensitive_string where digit count is less than 13
     assert redact_sensitive_string("12-34-56-78-90") == "12-34-56-78-90"
-
