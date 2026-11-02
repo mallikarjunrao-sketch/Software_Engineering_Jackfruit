@@ -5,7 +5,12 @@ from pydantic import BaseModel, Field
 
 
 class EntryRequest(BaseModel):
-    imageRef: str | None = None
+    imageRef: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9_.-]+$"
+    )
     plate: str | None = None
     vehicleType: Literal["car", "two_wheeler", "ev", "accessible"]
 
@@ -19,7 +24,12 @@ class EntryResponse(BaseModel):
 
 
 class ExitRequest(BaseModel):
-    imageRef: str | None = None
+    imageRef: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9_.-]+$"
+    )
     plate: str | None = None
 
 
@@ -46,9 +56,9 @@ class FeeResponse(BaseModel):
 
 
 class PaymentRequest(BaseModel):
-    sessionId: int
+    sessionId: int = Field(gt=0)
     mode: Literal["CASH", "CARD", "UPI"]
-    amount: int = Field(gt=0)
+    amount: int = Field(gt=0, le=1_000_000)
 
 
 class PaymentResponse(BaseModel):
@@ -70,7 +80,11 @@ class AvailabilityResponse(BaseModel):
 
 
 class AnprRequest(BaseModel):
-    imageRef: str
+    imageRef: str = Field(
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9_.-]+$"
+    )
 
 
 class AnprResponse(BaseModel):
@@ -79,9 +93,9 @@ class AnprResponse(BaseModel):
 
 
 class GatewayRequest(BaseModel):
-    sessionId: int
+    sessionId: int = Field(gt=0)
     mode: Literal["CASH", "CARD", "UPI"]
-    amount: int = Field(gt=0)
+    amount: int = Field(gt=0, le=1_000_000)
     simulate: Literal["success", "failure", "timeout"] = "success"
 
 
