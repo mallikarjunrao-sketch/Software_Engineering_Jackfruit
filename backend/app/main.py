@@ -4,9 +4,8 @@ from fastapi import FastAPI
 
 from backend.app.database import Base, SessionLocal, engine
 from backend.app.errors import ApiError, api_error_handler
-from backend.app.routers import admin, auth, availability, billing, kiosk, parking, simulated
+from backend.app.routers import admin, auth, availability, billing, dashboard, kiosk, parking, simulated
 from backend.app.seed import seed_database
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -24,6 +23,7 @@ app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(availability.router)
 app.include_router(availability.live_router)
+app.include_router(dashboard.router)
 app.include_router(simulated.router)
 app.include_router(kiosk.router)
 
