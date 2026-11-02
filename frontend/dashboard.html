@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APMS Staff Dashboard</title>
+<style>
+  :root { --bg: #f3f5fa; --panel: #ffffff; --text: #1b2333; --muted: #5b6579; --line: #d6dbe6; --brand: #1f3864; --brand-text: #ffffff; --ok: #1e8e4e; --warn: #b7791f; --full: #c0392b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: Arial, Helvetica, sans-serif; font-size: 17px; }
+  header { background: var(--brand); color: var(--brand-text); padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+  header h1 { margin: 0; font-size: 1.4rem; flex: 1; }
+  .badge { padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.15); font-size: 0.95rem; }
+  .badge.live { background: #1e8e4e; }
+  .badge.polling { background: #b7791f; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  nav button { padding: 10px 18px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; font-size: 1rem; cursor: pointer; color: var(--text); }
+  nav button[aria-selected="true"] { background: var(--brand); color: var(--brand-text); border-color: var(--brand); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px; margin-bottom: 20px; }
+  h2 { margin: 0 0 14px; font-size: 1.25rem; }
+  h3 { margin: 18px 0 8px; font-size: 1.05rem; }
+  label { display: block; margin: 10px 0 4px; font-weight: bold; }
+  input, select, textarea { width: 100%; max-width: 420px; padding: 10px; font-size: 1rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); }
+  textarea { min-height: 80px; }
+  button.primary { margin-top: 14px; padding: 11px 22px; border: 0; border-radius: 8px; background: var(--brand); color: var(--brand-text); font-size: 1rem; cursor: pointer; }
+  button.secondary { margin-top: 14px; margin-left: 8px; padding: 11px 22px; border: 1px solid var(--brand); border-radius: 8px; background: #fff; color: var(--brand); font-size: 1rem; cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #4c8dff; outline-offset: 2px; }
+  .msg { margin-top: 14px; padding: 10px 14px; border-radius: 8px; display: none; }
+  .msg.show { display: block; }
+  .msg.error { background: #fdecea; color: #8a1f17; border: 1px solid #f5c2bd; }
+  .msg.success { background: #e6f6ec; color: #145c33; border: 1px solid #b6e2c6; }
+  .msg.info { background: #eef3fb; color: #1f3864; border: 1px solid #c9d6ef; }
+  #tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+  .tile { border: 1px solid var(--line); border-left: 10px solid var(--ok); border-radius: 12px; padding: 16px; background: #fff; }
+  .tile.low { border-left-color: var(--warn); }
+  .tile.full { border-left-color: var(--full); }
+  .tile .label { color: var(--muted); font-size: 1.1rem; }
+  .tile .free { font-size: 3rem; font-weight: bold; line-height: 1.1; }
+  .tile .state { font-weight: bold; margin-top: 4px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { background: #eef1f8; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; }
+  .row > div { flex: 1; min-width: 200px; }
+  .hidden { display: none !important; }
+  #login-card { max-width: 480px; margin: 60px auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>APMS Staff Dashboard</h1>
+  <span id="who" class="badge hidden"></span>
+  <span id="live" class="badge hidden" role="status" aria-live="polite">Connecting</span>
+  <button id="logout" class="secondary hidden" type="button" style="margin:0">Log out</button>
+</header>
+<main>
+  <section id="login-card" class="card">
+    <h2>Staff login</h2>
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button class="primary" type="submit">Log in</button>
+    </form>
+    <div id="login-msg" class="msg" role="alert"></div>
+  </section>
+
+  <div id="app" class="hidden">
+    <nav id="tabs" role="tablist" aria-label="Dashboard sections"></nav>
+
+    <section id="panel-availability" class="card hidden">
+      <h2>Live availability</h2>
+      <div id="tiles" aria-live="polite"></div>
+      <p>Last updated: <span id="updated">-</span></p>
+    </section>
+
+    <section id="panel-entry" class="card hidden">
+      <h2>Vehicle entry (manual plate)</h2>
+      <form id="entry-form">
+        <div class="row">
+          <div>
+            <label for="entry-plate">Number plate</label>
+            <input id="entry-plate" required placeholder="KA01AB1234">
+          </div>
+          <div>
+            <label for="entry-type">Vehicle type</label>
+            <select id="entry-type">
+              <option value="car">Car</option>
+              <option value="two_wheeler">Two-wheeler</option>
+              <option value="ev">EV</option>
+              <option value="accessible">Accessible</option>
+            </select>
+          </div>
+        </div>
+        <button class="primary" type="submit">Create entry</button>
+      </form>
+      <div id="entry-msg" class="msg" role="alert"></div>
+      <div id="entry-result"></div>
+    </section>
+
+    <section id="panel-exit" class="card hidden">
+      <h2>Vehicle exit and override</h2>
+      <form id="exit-form">
+        <label for="exit-plate">Number plate</label>
+        <input id="exit-plate" required placeholder="KA01AB1234">
+        <button class="primary" type="submit">Find session</button>
+      </form>
+      <div id="exit-msg" class="msg" role="alert"></div>
+      <div id="exit-result"></div>
+      <div id="exit-actions" class="hidden">
+        <button id="authorise-btn" class="primary" type="button">Authorise exit</button>
+        <h3>Override (lost ticket or recognition failure)</h3>
+        <label for="override-reason">Reason</label>
+        <textarea id="override-reason" placeholder="Explain why the override is needed"></textarea>
+        <button id="override-btn" class="secondary" type="button" style="margin-left:0">Override exit</button>
+      </div>
+    </section>
+
+    <section id="panel-tariffs" class="card hidden">
+      <h2>Tariff editor</h2>
+      <form id="tariff-form">
+        <label for="tariff-type">Vehicle type</label>
+        <select id="tariff-type">
+          <option value="car">Car</option>
+          <option value="two_wheeler">Two-wheeler</option>
+          <option value="ev">EV</option>
+          <option value="accessible">Accessible</option>
+        </select>
+        <div class="row">
+          <div><label for="tariff-grace">Grace period (minutes)</label><input id="tariff-grace" type="number" min="0" required></div>
+          <div><label for="tariff-first">First hour fee</label><input id="tariff-first" type="number" min="0" required></div>
+        </div>
+        <div class="row">
+          <div><label for="tariff-extra">Extra hour fee</label><input id="tariff-extra" type="number" min="0" required></div>
+          <div><label for="tariff-cap">Daily cap</label><input id="tariff-cap" type="number" min="0" required></div>
+        </div>
+        <button class="primary" type="submit">Save tariff</button>
+      </form>
+      <div id="tariff-msg" class="msg" role="alert"></div>
+      <div id="tariff-result"></div>
+    </section>
+
+    <section id="panel-reports" class="card hidden">
+      <h2>Revenue and occupancy reports</h2>
+      <form id="report-form">
+        <div class="row">
+          <div><label for="report-from">From</label><input id="report-from" type="date" required></div>
+          <div><label for="report-to">To</label><input id="report-to" type="date" required></div>
+        </div>
+        <button class="primary" type="submit">Show report</button>
+        <button id="csv-btn" class="secondary" type="button">Download CSV</button>
+      </form>
+      <div id="report-msg" class="msg" role="alert"></div>
+      <div id="report-result"></div>
+    </section>
+  </div>
+</main>
+<script>
+  const API = "/api/v1";
+  const TABS = {
+    ATTENDANT: [["availability", "Availability"], ["entry", "Vehicle entry"], ["exit", "Vehicle exit"]],
+    ADMIN: [["availability", "Availability"], ["tariffs", "Tariffs"], ["reports", "Reports"]]
+  };
+  const LABELS = { car: "Car", two_wheeler: "Two-wheeler", ev: "EV", accessible: "Accessible" };
+  const ORDER = ["car", "two_wheeler", "ev", "accessible"];
+  const state = { token: null, role: null, user: null, socket: null, pollTimer: null, retryDelay: 1000, retryTimer: null, exit: null };
+
+  const $ = id => document.getElementById(id);
+
+  function el(tag, props, ...children) {
+    const node = document.createElement(tag);
+    Object.entries(props || {}).forEach(([key, value]) => {
+      if (key === "className") node.className = value;
+      else node.setAttribute(key, value);
+    });
+    children.forEach(child => node.append(child));
+    return node;
+  }
+
+  function showMessage(id, text, kind) {
+    const box = $(id);
+    box.textContent = text;
+    box.className = "msg show " + kind;
+  }
+
+  function clearMessage(id) {
+    const box = $(id);
+    box.textContent = "";
+    box.className = "msg";
+  }
+
+  function describeError(error) {
+    if (error && error.status) {
+      const code = error.code ? " (" + error.code + ")" : "";
+      if (error.status === 404 || error.status === 501) return "This feature is not available on the server yet" + code + ".";
+      return (error.message || "Request failed") + code;
+    }
+    return "Could not reach the server.";
+  }
+
+  async function api(path, options) {
+    const settings = Object.assign({ method: "GET" }, options || {});
+    const headers = { "Content-Type": "application/json" };
+    if (state.token) headers.Authorization = "Bearer " + state.token;
+    const response = await fetch(API + path, { method: settings.method, headers, body: settings.body });
+    let body = null;
+    if (settings.raw) {
+      body = await response.text();
+    } else {
+      try { body = await response.json(); } catch (error) { body = null; }
+    }
+    if (response.status === 401 && state.token && path !== "/auth/login") {
+      logout("Your session expired. Please log in again.");
+    }
+    if (!response.ok) {
+      const detail = settings.raw ? {} : (body || {});
+      throw { status: response.status, code: detail.code, message: detail.message };
+    }
+    return body;
+  }
+
+  function renderData(container, data) {
+    container.replaceChildren();
+    if (Array.isArray(data)) {
+      if (data.length === 0) { container.append(el("p", {}, "No records for this period.")); return; }
+      const columns = [];
+      data.forEach(row => Object.keys(row).forEach(key => { if (!columns.includes(key)) columns.push(key); }));
+      const head = el("tr", {}, ...columns.map(column => el("th", {}, column)));
+      const rows = data.map(row => el("tr", {}, ...columns.map(column => el("td", {}, formatValue(row[column])))));
+      container.append(el("table", {}, el("thead", {}, head), el("tbody", {}, ...rows)));
+    } else if (data && typeof data === "object") {
+      const rows = Object.entries(data).map(([key, value]) => el("tr", {}, el("th", {}, key), el("td", {}, formatValue(value))));
+      container.append(el("table", {}, el("tbody", {}, ...rows)));
+    } else {
+      container.append(el("p", {}, String(data)));
+    }
+  }
+
+  function formatValue(value) {
+    if (value === null || value === undefined) return "";
+    return typeof value === "object" ? JSON.stringify(value) : String(value);
+  }
+
+  function renderTiles(data) {
+    const types = ORDER.filter(type => data.byType[type]).concat(Object.keys(data.byType).filter(type => !ORDER.includes(type)));
+    const tiles = types.map(type => {
+      const entry = data.byType[type];
+      const ratio = entry.total ? entry.free / entry.total : 0;
+      const kind = entry.free === 0 ? " full" : ratio <= 0.2 ? " low" : "";
+      const text = entry.free === 0 ? "FULL" : ratio <= 0.2 ? "Almost full" : "Available";
+      return el("div", { className: "tile" + kind },
+        el("div", { className: "label" }, LABELS[type] || type),
+        el("div", { className: "free" }, String(entry.free)),
+        el("div", {}, "free of " + entry.total),
+        el("div", { className: "state" }, text));
+    });
+    $("tiles").replaceChildren(...tiles);
+    $("updated").textContent = new Date(data.updatedAt).toLocaleTimeString();
+  }
+
+  function setLive(text, kind) {
+    const badge = $("live");
+    badge.textContent = text;
+    badge.className = "badge " + (kind || "");
+  }
+
+  async function pollAvailability() {
+    try {
+      const response = await fetch(API + "/availability");
+      if (response.ok) renderTiles(await response.json());
+    } catch (error) {
+      setLive("Offline", "");
+    }
+  }
+
+  function startPolling() {
+    if (state.pollTimer) return;
+    setLive("Polling every 2 s", "polling");
+    pollAvailability();
+    state.pollTimer = setInterval(pollAvailability, 2000);
+  }
+
+  function stopPolling() {
+    if (state.pollTimer) clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
+
+  function connectAvailability() {
+    if (!state.token) return;
+    const scheme = location.protocol === "https:" ? "wss://" : "ws://";
+    const socket = new WebSocket(scheme + location.host + "/ws/availability");
+    state.socket = socket;
+    socket.onopen = () => { state.retryDelay = 1000; stopPolling(); setLive("Live", "live"); };
+    socket.onmessage = event => renderTiles(JSON.parse(event.data));
+    socket.onclose = () => {
+      if (state.socket !== socket) return;
+      startPolling();
+      state.retryTimer = setTimeout(connectAvailability, state.retryDelay);
+      state.retryDelay = Math.min(state.retryDelay * 2, 15000);
+    };
+  }
+
+  function disconnectAvailability() {
+    const socket = state.socket;
+    state.socket = null;
+    if (socket) socket.close();
+    if (state.retryTimer) clearTimeout(state.retryTimer);
+    state.retryTimer = null;
+    stopPolling();
+  }
+
+  function showTab(name) {
+    document.querySelectorAll("#app > section").forEach(section => section.classList.add("hidden"));
+    $("panel-" + name).classList.remove("hidden");
+    document.querySelectorAll("#tabs button").forEach(button => button.setAttribute("aria-selected", String(button.dataset.tab === name)));
+  }
+
+  function renderApp() {
+    $("login-card").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    $("who").textContent = state.user + " (" + state.role + ")";
+    ["who", "live", "logout"].forEach(id => $(id).classList.remove("hidden"));
+    const tabs = TABS[state.role] || TABS.ATTENDANT;
+    $("tabs").replaceChildren(...tabs.map(([name, label]) => {
+      const button = el("button", { type: "button", role: "tab", "data-tab": name, "aria-selected": "false" }, label);
+      button.addEventListener("click", () => showTab(name));
+      return button;
+    }));
+    showTab(tabs[0][0]);
+    connectAvailability();
+  }
+
+  function logout(message) {
+    disconnectAvailability();
+    sessionStorage.clear();
+    Object.assign(state, { token: null, role: null, user: null, exit: null });
+    $("app").classList.add("hidden");
+    ["who", "live", "logout"].forEach(id => $(id).classList.add("hidden"));
+    $("login-card").classList.remove("hidden");
+    $("password").value = "";
+    if (message) showMessage("login-msg", message, "info"); else clearMessage("login-msg");
+  }
+
+  $("login-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    clearMessage("login-msg");
+    try {
+      const username = $("username").value.trim();
+      const result = await api("/auth/login", { method: "POST", body: JSON.stringify({ username, password: $("password").value }) });
+      Object.assign(state, { token: result.token, role: result.role, user: username });
+      sessionStorage.setItem("apms_session", JSON.stringify({ token: result.token, role: result.role, user: username }));
+      $("password").value = "";
+      renderApp();
+    } catch (error) {
+      showMessage("login-msg", error && error.status === 401 ? "Wrong username or password." : describeError(error), "error");
+    }
+  });
+
+  $("logout").addEventListener("click", () => logout());
+
+  $("entry-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    clearMessage("entry-msg");
+    $("entry-result").replaceChildren();
+    try {
+      const body = JSON.stringify({ plate: $("entry-plate").value.trim(), vehicleType: $("entry-type").value });
+      const result = await api("/entries", { method: "POST", body });
+      showMessage("entry-msg", "Entry created. Ticket " + result.ticketNo + ", slot " + result.slotId + ".", "success");
+      renderData($("entry-result"), result);
+      $("entry-plate").value = "";
+    } catch (error) {
+      showMessage("entry-msg", describeError(error), "error");
+    }
+  });
+
+  $("exit-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    clearMessage("exit-msg");
+    $("exit-result").replaceChildren();
+    $("exit-actions").classList.add("hidden");
+    state.exit = null;
+    try {
+      const result = await api("/exits", { method: "POST", body: JSON.stringify({ plate: $("exit-plate").value.trim() }) });
+      state.exit = result;
+      showMessage("exit-msg", "Session found. Amount due: " + result.amountDue + ".", "info");
+      renderData($("exit-result"), result);
+      $("exit-actions").classList.remove("hidden");
+    } catch (error) {
+      showMessage("exit-msg", describeError(error), "error");
+    }
+  });
+
+  $("authorise-btn").addEventListener("click", async () => {
+    if (!state.exit) return;
+    clearMessage("exit-msg");
+    try {
+      const result = await api("/exits/" + state.exit.sessionId + "/authorise", { method: "POST" });
+      showMessage("exit-msg", "Gate " + result.gate + ".", "success");
+    } catch (error) {
+      showMessage("exit-msg", describeError(error), "error");
+    }
+  });
+
+  $("override-btn").addEventListener("click", async () => {
+    if (!state.exit) return;
+    clearMessage("exit-msg");
+    const reason = $("override-reason").value.trim();
+    if (reason.length < 3) {
+      showMessage("exit-msg", "Enter a reason of at least 3 characters.", "error");
+      return;
+    }
+    try {
+      const result = await api("/exits/" + state.exit.sessionId + "/override", { method: "POST", body: JSON.stringify({ reason }) });
+      showMessage("exit-msg", "Override recorded. Gate " + result.gate + ".", "success");
+      $("override-reason").value = "";
+    } catch (error) {
+      showMessage("exit-msg", describeError(error), "error");
+    }
+  });
+
+  $("tariff-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    clearMessage("tariff-msg");
+    $("tariff-result").replaceChildren();
+    const body = JSON.stringify({
+      graceMinutes: Number($("tariff-grace").value),
+      firstHourFee: Number($("tariff-first").value),
+      extraHourFee: Number($("tariff-extra").value),
+      dailyCap: Number($("tariff-cap").value)
+    });
+    try {
+      const result = await api("/admin/tariffs/" + encodeURIComponent($("tariff-type").value), { method: "PUT", body });
+      showMessage("tariff-msg", "Tariff saved.", "success");
+      renderData($("tariff-result"), result);
+    } catch (error) {
+      showMessage("tariff-msg", describeError(error), "error");
+    }
+  });
+
+  function reportQuery(format) {
+    const params = new URLSearchParams({ from: $("report-from").value, to: $("report-to").value });
+    if (format) params.set("format", format);
+    return "/reports/revenue?" + params.toString();
+  }
+
+  $("report-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    clearMessage("report-msg");
+    $("report-result").replaceChildren();
+    try {
+      renderData($("report-result"), await api(reportQuery()));
+    } catch (error) {
+      showMessage("report-msg", describeError(error), "error");
+    }
+  });
+
+  $("csv-btn").addEventListener("click", async () => {
+    clearMessage("report-msg");
+    if (!$("report-from").value || !$("report-to").value) {
+      showMessage("report-msg", "Choose a start and end date first.", "error");
+      return;
+    }
+    try {
+      const text = await api(reportQuery("csv"), { raw: true });
+      const link = el("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv" })), download: "revenue-report.csv" });
+      document.body.append(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      showMessage("report-msg", describeError(error), "error");
+    }
+  });
+
+  const saved = sessionStorage.getItem("apms_session");
+  if (saved) {
+    try {
+      const session = JSON.parse(saved);
+      Object.assign(state, { token: session.token, role: session.role, user: session.user });
+      renderApp();
+    } catch (error) {
+      sessionStorage.clear();
+    }
+  }
+</script>
+</body>
+</html>
