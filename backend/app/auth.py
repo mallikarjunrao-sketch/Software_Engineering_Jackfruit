@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from backend.app.constants import ROLE_ADMIN, ROLE_ATTENDANT
 from backend.app.database import get_db
 from backend.app.errors import ApiError
-from backend.app.models import AuditLog, User
+from backend.app.models import User
+from backend.app.services import audit
 
 ALGORITHM = "HS256"
 TOKEN_MINUTES = 15
@@ -67,14 +68,12 @@ def require_role(*roles: str):
         # The role is read from the database user, never from the token, so a
         # forged or stale "role" claim cannot grant access.
         if user.role not in roles:
-            db.add(
-                AuditLog(
-                    user_id=user.id,
-                    action="ACCESS_DENIED",
-                    details=f"{request.method} {request.url.path} role={user.role} needs={'/'.join(roles)}",
-                )
+            audit.record(
+                db,
+                audit.ACCESS_DENIED,
+                user.id,
+                f"{request.method} {request.url.path} role={user.role} needs={'/'.join(roles)}",
             )
-            db.commit()
             raise ApiError(403, "FORBIDDEN", "You do not have permission for this action")
         return user
 
