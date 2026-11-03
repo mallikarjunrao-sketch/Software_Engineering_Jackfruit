@@ -99,7 +99,7 @@
 </main>
 
 <script>
-  const API = "/api/v1";
+  const API = "http://127.0.0.1:8000/api/v1";
   const GATE_OPEN_MS = 5000;
 
   const ERROR_TEXT = {
@@ -110,7 +110,6 @@
     DUPLICATE_ACTIVE_ENTRY: ["bad", "Entry denied: this vehicle already has an active session."],
     PARKING_FULL: ["bad", "Entry denied: no free slot for this vehicle type."],
     SESSION_NOT_FOUND: ["bad", "No active parking session found for this vehicle."],
-    NOT_IMPLEMENTED: ["warn", "This service is not available yet. Please call an attendant."],
     GATEWAY_TIMEOUT: ["warn", "Payment gateway timed out. Please try again."]
   };
 
@@ -244,25 +243,29 @@
     if (!currentSession) return;
     clearMessage();
     $("exit-pay").disabled = true;
-    const payment = await call("POST", "/payments", {
-      sessionId: currentSession.sessionId,
-      mode: $("exit-mode").value,
-      amount: currentSession.amountDue
-    });
-    if (!payment.ok) {
-      $("exit-pay").disabled = false;
-      return showError(payment);
-    }
-    if (payment.data.status !== "SUCCESS") {
-      $("exit-pay").disabled = false;
-      return showMessage("bad", "Payment " + String(payment.data.status).toLowerCase() + ". Gate stays closed.");
+    let receiptNo = "No payment required";
+    if (Number(currentSession.amountDue) > 0) {
+      const payment = await call("POST", "/payments", {
+        sessionId: currentSession.sessionId,
+        mode: $("exit-mode").value,
+        amount: currentSession.amountDue
+      });
+      if (!payment.ok) {
+        $("exit-pay").disabled = false;
+        return showError(payment);
+      }
+      if (payment.data.status !== "SUCCESS") {
+        $("exit-pay").disabled = false;
+        return showMessage("bad", "Payment " + String(payment.data.status).toLowerCase() + ". Gate stays closed.");
+      }
+      receiptNo = payment.data.receiptNo || "-";
     }
     const gate = await call("POST", "/exits/" + currentSession.sessionId + "/authorise");
     $("exit-pay").disabled = false;
     if (!gate.ok) return showError(gate);
     setGate(gate.data.gate);
-    showMessage("ok", "Payment received. Gate open. Thank you!", {
-      Receipt: payment.data.receiptNo || "-"
+    showMessage("ok", Number(currentSession.amountDue) > 0 ? "Payment received. Gate open. Thank you!" : "Grace period applied. Gate open. Thank you!", {
+      Receipt: receiptNo
     });
     cancelExit(true);
   }

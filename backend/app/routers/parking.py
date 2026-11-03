@@ -6,11 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 import simulators.anpr as anpr
+from backend.app.auth import require_staff
 from backend.app.constants import SESSION_ACTIVE, SLOT_FREE
 from backend.app.database import get_db
-from backend.app.errors import ApiError, not_implemented
-from backend.app.models import ParkingSession, Slot, Vehicle
+from backend.app.errors import ApiError
+from backend.app.models import ParkingSession, Slot, User, Vehicle
 from backend.app.services.billing import compute_session_fee
+from backend.app.services.exit_service import authorise_exit as authorise_exit_service
+from backend.app.services.override import override_exit_session
 from backend.app.services.slots import allocate_slot
 from backend.app.schemas import (
     EntryRequest,
@@ -159,7 +162,8 @@ def start_exit(payload: ExitRequest, db: Session = Depends(get_db)):
 
 @router.post("/exits/{session_id}/authorise", response_model=GateResponse)
 def authorise_exit(session_id: int, db: Session = Depends(get_db)):
-    raise not_implemented()
+    result = authorise_exit_service(db, session_id)
+    return GateResponse(gate=result["gate"], exitTime=result["exitTime"])
 
 
 @router.post("/exits/{session_id}/override", response_model=GateResponse)
@@ -167,5 +171,7 @@ def override_exit(
     session_id: int,
     payload: OverrideRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
 ):
-    raise not_implemented()
+    result = override_exit_session(db, session_id, payload.reason, user=user)
+    return GateResponse(gate=result["gate"], exitTime=result["exitTime"])
