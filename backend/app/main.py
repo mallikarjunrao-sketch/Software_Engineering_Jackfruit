@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from backend.app.database import Base, SessionLocal, engine
 from backend.app.errors import ApiError, api_error_handler
+from backend.app.https_enforcement import HTTPSEnforcementMiddleware
 from backend.app.routers import admin, auth, availability, billing, dashboard, kiosk, parking, reports, simulated
 from backend.app.seed import seed_database
 
@@ -17,6 +18,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Automated Parking Management System", version="1.0.0", lifespan=lifespan)
 app.add_exception_handler(ApiError, api_error_handler)
+app.add_middleware(HTTPSEnforcementMiddleware)
 app.include_router(parking.router)
 app.include_router(billing.router)
 app.include_router(admin.router)
