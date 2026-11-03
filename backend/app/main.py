@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.database import Base, SessionLocal, engine
 from backend.app.errors import ApiError, api_error_handler
+from backend.app.https_enforcement import HTTPSEnforcementMiddleware
 from backend.app.routers import admin, auth, availability, billing, dashboard, kiosk, parking, reports, simulated
 from backend.app.seed import seed_database
 
@@ -24,6 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_exception_handler(ApiError, api_error_handler)
+app.add_middleware(HTTPSEnforcementMiddleware)
 app.include_router(parking.router)
 app.include_router(billing.router)
 app.include_router(admin.router)
