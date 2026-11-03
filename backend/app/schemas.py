@@ -59,6 +59,7 @@ class PaymentRequest(BaseModel):
     sessionId: int = Field(gt=0)
     mode: Literal["CASH", "CARD", "UPI"]
     amount: int = Field(gt=0, le=1_000_000)
+    simulate: Literal["success", "failure", "timeout"] = "success"
 
 
 class PaymentResponse(BaseModel):

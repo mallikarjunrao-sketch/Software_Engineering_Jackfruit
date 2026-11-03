@@ -20,35 +20,39 @@ uvicorn backend.app.main:app --reload
 ```
 Open http://localhost:8000/health and http://localhost:8000/docs
 
-## Sprint 1 starter code
-Included and working: database models and seed data, password hashing, ANPR simulator, payment gateway simulator, availability endpoint, error format, tests.
-Stubbed (return 501 NOT_IMPLEMENTED until built): entries, exits, authorise, override, fee, payments.
+## Current implementation status
 
-| Story | Where to work |
-|---|---|
-| PARK-9, 10, 11 (entry) | backend/app/routers/parking.py, create_entry |
-| PARK-12, 13 (slot allocation, atomic update) | new backend/app/services/slots.py, used by create_entry |
-| PARK-18 (fee) | new backend/app/services/billing.py, get_fee in routers/billing.py |
-| PARK-20, 21 (payment, receipt) | create_payment in routers/billing.py, simulators/gateway.py |
-| PARK-23, 29 (login, hashing) | new backend/app/routers/auth.py, backend/app/security.py |
-| PARK-24 (schema and seed) | backend/app/models.py, backend/app/seed.py |
-| PARK-25, 26 (simulators) | simulators/anpr.py, simulators/gateway.py |
+The current application includes vehicle entry, manual/ANPR plate recognition, duplicate/full-lot validation, session and ticket creation, slot allocation, live availability, exit-session lookup, fee calculation, simulated payment, receipt-number generation, exit authorisation, slot release, attendant override, authentication, reporting and kiosk/board/dashboard pages.
 
-When you implement an endpoint, remove its row from tests/test_stubs.py and add real tests.
+### Main workflows
 
-Demo logins after first run: admin / admin123 and attendant / attendant123. Override with SEED_ADMIN_PASSWORD and SEED_ATTENDANT_PASSWORD.
+| Workflow | API | Behaviour |
+|---|---|---|
+| Vehicle entry | `POST /api/v1/entries` | Validates plate, checks duplicate/full conditions, allocates a compatible slot and issues a ticket. |
+| Exit lookup | `POST /api/v1/exits` | Recognises/manual-validates the plate and returns the active session and amount due. |
+| Fee calculation | `GET /api/v1/sessions/{session_id}/fee` | Returns duration, amount due and tariff breakdown. |
+| Payment | `POST /api/v1/payments` | Calls the simulated gateway, records success/failure/timeout and marks the session PAID only on success. |
+| Exit authorisation | `POST /api/v1/exits/{session_id}/authorise` | Rejects unpaid exits; otherwise closes the session, frees the slot and returns gate OPEN. |
+| Attendant override | `POST /api/v1/exits/{session_id}/override` | Requires attendant/admin authentication, records the reason and audit entry, closes the session and frees the slot. |
+
+The payment API accepts an optional `simulate` value (`success`, `failure` or `timeout`) for controlled gateway testing. It defaults to `success`. A zero-fee session in the grace period does not require a payment; the kiosk proceeds directly to exit authorisation.
+
+### Demo logins
+
+After first run, the seeded development accounts are `admin / admin123` and `attendant / attendant123`. Set `SEED_ADMIN_PASSWORD` and `SEED_ATTENDANT_PASSWORD` to override the development defaults.
 
 ## Test
-```
+
+```bash
 pytest --cov=backend --cov=simulators
 ruff check backend simulators tests
 ```
 
 ## Workflow
-1. Pick a Jira ticket (project key PARK) and create a branch named PARK-<id>-short-description
-2. Commit often and open a pull request to main using the template
-3. CI must pass and one teammate must approve before merge
-4. Merge to main triggers the CD workflow
+1. Pick a Jira ticket (project key PARK) and create a branch named `PARK-<id>-short-description`.
+2. Commit often and open a pull request to `main` using the template.
+3. CI must pass and one teammate must approve before merge.
+4. Merge to `main` triggers the CD workflow.
 
 ## Team
 | Member | Area |

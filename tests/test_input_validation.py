@@ -1,4 +1,5 @@
 import pytest
+from backend.app.schemas import PaymentRequest
 
 
 @pytest.mark.parametrize(
@@ -196,15 +197,13 @@ def test_report_date_rejects_injection_string(client):
     assert response.status_code == 422
 
 
-def test_valid_payment_boundary_is_accepted_by_schema(client):
 
-    response = client.post(
-        "/api/v1/payments",
-        json={
-            "sessionId": 1,
-            "mode": "UPI",
-            "amount": 1_000_000
-        },
+
+def test_valid_payment_boundary_is_accepted_by_schema():
+    payload = PaymentRequest(
+        sessionId=1,
+        mode="UPI",
+        amount=1_000_000,
     )
 
-    assert response.status_code == 501
+    assert payload.amount == 1_000_000

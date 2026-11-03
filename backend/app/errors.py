@@ -16,7 +16,3 @@ async def api_error_handler(request: Request, exc: ApiError):
         status_code=exc.status_code,
         content={"code": exc.code, "message": exc.message, "requestId": str(uuid.uuid4())},
     )
-
-
-def not_implemented():
-    return ApiError(501, "NOT_IMPLEMENTED", "This endpoint is not implemented yet")
