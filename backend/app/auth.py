@@ -9,12 +9,19 @@ from sqlalchemy.orm import Session
 from backend.app.constants import ROLE_ADMIN, ROLE_ATTENDANT
 from backend.app.database import get_db
 from backend.app.errors import ApiError
-from backend.app.models import User
+from backend.app.models import User, utcnow
 from backend.app.services import audit
 
 ALGORITHM = "HS256"
-TOKEN_MINUTES = 15
-EXPIRES_IN_SECONDS = TOKEN_MINUTES * 60
+
+# APMS-SR-007: a session ends after 15 minutes without any request. The check is
+# made on the server (User.last_activity), so each request starts a fresh 15 minutes.
+INACTIVITY_MINUTES = 15
+EXPIRES_IN_SECONDS = INACTIVITY_MINUTES * 60
+
+# Upper limit on how long one token can ever be used, even by a busy user.
+# The 15 minute inactivity rule above is what normally ends a session.
+TOKEN_MAX_HOURS = 8
 
 # Development default only. It must never be used on staging or production.
 DEV_SECRET = "dev-only-secret-never-use-on-staging-0123456789"
@@ -35,7 +42,7 @@ def create_token(user: User) -> str:
         "sub": user.username,
         "role": user.role,
         "iat": now,
-        "exp": now + timedelta(minutes=TOKEN_MINUTES),
+        "exp": now + timedelta(hours=TOKEN_MAX_HOURS),
     }
     return jwt.encode(claims, get_secret(), algorithm=ALGORITHM)
 
@@ -56,6 +63,19 @@ def get_current_user(
     user = db.scalar(select(User).where(User.username == claims.get("sub")))
     if user is None:
         raise ApiError(401, "INVALID_TOKEN", "The token is not valid")
+
+    # APMS-SR-007: reject a session that has been idle too long, otherwise record
+    # this request as the latest activity. An expired session stays expired until
+    # the user logs in again, because last_activity is not refreshed here.
+    now = utcnow()
+    if user.last_activity is not None and now - user.last_activity > timedelta(minutes=INACTIVITY_MINUTES):
+        raise ApiError(
+            401,
+            "SESSION_EXPIRED",
+            f"Your session expired after {INACTIVITY_MINUTES} minutes of inactivity. Please log in again.",
+        )
+    user.last_activity = now
+    db.commit()
     return user
 
 
