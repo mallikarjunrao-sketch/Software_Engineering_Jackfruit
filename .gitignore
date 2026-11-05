@@ -12,3 +12,5 @@ htmlcov/
 .idea/
 .vscode/
 backups/
+performance/results/
+perf.db
