@@ -14,3 +14,5 @@ htmlcov/
 backups/
 performance/results/
 perf.db
+*.db-wal
+*.db-shm
