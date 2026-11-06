@@ -3,9 +3,19 @@ name: CD
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/cd.yml"
+      - "scripts/smoke_test.py"
+      - "scripts/check_tls.py"
+      - "Dockerfile"
+  workflow_dispatch:
 
 jobs:
   publish-image:
+    # Pull requests only test the deployment steps, they do not publish an image.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,3 +34,102 @@ jobs:
           context: .
           push: true
           tags: ${{ env.IMAGE }}:latest,${{ env.IMAGE }}:${{ github.sha }}
+
+  deploy-staging:
+    needs: publish-image
+    # Run after a successful publish, or when publish was skipped (pull request). Never after a failure.
+    if: ${{ !cancelled() && needs.publish-image.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to the container registry
+        if: needs.publish-image.result == 'success'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get the image to deploy
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if [ "${{ needs.publish-image.result }}" = "success" ]; then
+            docker pull "$IMAGE:${GITHUB_SHA}"
+            echo "APMS_IMAGE=$IMAGE:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          else
+            # Pull requests do not publish an image, so build the one from this commit.
+            docker build -t apms-local .
+            echo "APMS_IMAGE=apms-local" >> "$GITHUB_ENV"
+          fi
+
+      - name: Create staging secrets and a self-signed certificate
+        run: |
+          mkdir -p "$RUNNER_TEMP/certs"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout "$RUNNER_TEMP/certs/key.pem" -out "$RUNNER_TEMP/certs/cert.pem" \
+            -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost"
+          for name in JWT_SECRET SEED_ADMIN_PASSWORD SEED_ATTENDANT_PASSWORD; do
+            value="$(openssl rand -hex 32)"
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+
+      - name: Deploy to staging (HTTPS on 8443, plain HTTP on 8080)
+        run: |
+          docker run -d --name apms-staging-https -p 8443:8443 \
+            -e APP_ENV=staging -e JWT_SECRET -e SEED_ADMIN_PASSWORD -e SEED_ATTENDANT_PASSWORD \
+            -v "$RUNNER_TEMP/certs:/certs:ro" \
+            "$APMS_IMAGE" \
+            uvicorn backend.app.main:app --host 0.0.0.0 --port 8443 \
+              --ssl-keyfile /certs/key.pem --ssl-certfile /certs/cert.pem
+          docker run -d --name apms-staging-http -p 8080:8000 \
+            -e APP_ENV=staging -e JWT_SECRET -e SEED_ADMIN_PASSWORD -e SEED_ATTENDANT_PASSWORD \
+            "$APMS_IMAGE"
+
+      - name: Smoke tests
+        run: |
+          set -o pipefail
+          export SMOKE_ADMIN_PASSWORD="$SEED_ADMIN_PASSWORD"
+          export SMOKE_ATTENDANT_PASSWORD="$SEED_ATTENDANT_PASSWORD"
+          python3 scripts/smoke_test.py \
+            --base-url https://localhost:8443 --http-url http://localhost:8080 \
+            --insecure --wait 90 | tee smoke.log
+
+      - name: TLS check (TC-SEC-01)
+        run: |
+          set -o pipefail
+          python3 scripts/check_tls.py https://localhost:8443 --http-port 8080 --insecure | tee tls.log
+
+      - name: Show results in the job summary
+        if: always()
+        run: |
+          {
+            echo "## Staging deployment"
+            echo "Image: \`${APMS_IMAGE:-not available}\`"
+            for log in smoke.log tls.log; do
+              if [ -f "$log" ]; then
+                echo
+                echo "### $log"
+                echo '```'
+                cat "$log"
+                echo '```'
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Container logs
+        if: failure()
+        run: |
+          docker logs apms-staging-https || true
+          docker logs apms-staging-http || true
+
+      - name: Stop staging
+        if: always()
+        run: docker rm -f apms-staging-https apms-staging-http || true
