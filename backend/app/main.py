@@ -5,7 +5,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import Base, SessionLocal, engine
 from backend.app.errors import ApiError, api_error_handler
 from backend.app.https_enforcement import HTTPSEnforcementMiddleware
-from backend.app.routers import admin, auth, availability, billing, dashboard, kiosk, parking, reports, simulated
+from backend.app.routers import (
+    admin,
+    auth,
+    availability,
+    billing,
+    dashboard,
+    kiosk,
+    parking,
+    reports,
+    simulated,
+    tariffs,
+)
 from backend.app.seed import seed_database
 
 @asynccontextmanager
@@ -36,6 +47,7 @@ app.include_router(availability.live_router)
 app.include_router(dashboard.router)
 app.include_router(simulated.router)
 app.include_router(kiosk.router)
+app.include_router(tariffs.router)
 
 
 @app.get("/health")
