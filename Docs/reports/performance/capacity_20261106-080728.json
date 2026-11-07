@@ -1,0 +1,17 @@
+{
+  "timestamp": "20261106-080728",
+  "gates": 10,
+  "events": 500,
+  "status_codes": {
+    "201": 500
+  },
+  "failed_requests": 0,
+  "checks": {
+    "no failed requests": true,
+    "every request answered 201 or 409": true,
+    "no slot given twice": true,
+    "availability matches successful entries": true
+  },
+  "p95_seconds": 0.964016999991145,
+  "max_seconds": 13.155939399992349
+}

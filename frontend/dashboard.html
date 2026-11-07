@@ -167,7 +167,7 @@
   };
   const LABELS = { car: "Car", two_wheeler: "Two-wheeler", ev: "EV", accessible: "Accessible" };
   const ORDER = ["car", "two_wheeler", "ev", "accessible"];
-  const state = { token: null, role: null, user: null, socket: null, pollTimer: null, retryDelay: 1000, retryTimer: null, exit: null };
+  const state = { token: null, role: null, user: null, socket: null, pollTimer: null, retryDelay: 1000, retryTimer: null, exit: null, tariffs: {} };
 
   const $ = id => document.getElementById(id);
 
@@ -196,7 +196,7 @@
   function describeError(error) {
     if (error && error.status) {
       const code = error.code ? " (" + error.code + ")" : "";
-      if (error.status === 404 || error.status === 501) return "This feature is not available on the server yet" + code + ".";
+      if ((error.status === 404 || error.status === 501) && !error.code) return "This feature is not available on the server yet.";
       return (error.message || "Request failed") + code;
     }
     return "Could not reach the server.";
@@ -317,7 +317,29 @@
     document.querySelectorAll("#app > section").forEach(section => section.classList.add("hidden"));
     $("panel-" + name).classList.remove("hidden");
     document.querySelectorAll("#tabs button").forEach(button => button.setAttribute("aria-selected", String(button.dataset.tab === name)));
+    if (name === "tariffs") loadTariffs();
   }
+
+  function fillTariff() {
+    const current = state.tariffs[$("tariff-type").value];
+    if (!current) return;
+    $("tariff-grace").value = current.graceMinutes;
+    $("tariff-first").value = current.firstHourFee;
+    $("tariff-extra").value = current.extraHourFee;
+    $("tariff-cap").value = current.dailyCap;
+  }
+
+  async function loadTariffs() {
+    try {
+      const list = await api("/admin/tariffs");
+      state.tariffs = Object.fromEntries(list.map(item => [item.vehicleType, item]));
+      fillTariff();
+    } catch (error) {
+      state.tariffs = {};
+    }
+  }
+
+  $("tariff-type").addEventListener("change", fillTariff);
 
   function renderApp() {
     $("login-card").classList.add("hidden");
@@ -436,6 +458,7 @@
       const result = await api("/admin/tariffs/" + encodeURIComponent($("tariff-type").value), { method: "PUT", body });
       showMessage("tariff-msg", "Tariff saved.", "success");
       renderData($("tariff-result"), result);
+      if (result && result.vehicleType) state.tariffs[result.vehicleType] = result;
     } catch (error) {
       showMessage("tariff-msg", describeError(error), "error");
     }
