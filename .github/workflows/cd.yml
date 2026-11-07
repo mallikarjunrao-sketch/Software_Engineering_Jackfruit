@@ -9,6 +9,7 @@ on:
       - ".github/workflows/cd.yml"
       - "scripts/smoke_test.py"
       - "scripts/check_tls.py"
+      - ".zap/**"
       - "Dockerfile"
   workflow_dispatch:
 
@@ -40,7 +41,7 @@ jobs:
     # Run after a successful publish, or when publish was skipped (pull request). Never after a failure.
     if: ${{ !cancelled() && needs.publish-image.result != 'failure' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     environment:
       name: staging
     permissions:
@@ -107,13 +108,32 @@ jobs:
           set -o pipefail
           python3 scripts/check_tls.py https://localhost:8443 --http-port 8080 --insecure | tee tls.log
 
+      - name: OWASP ZAP baseline scan (PARK-46)
+        run: |
+          mkdir -p zap-out
+          cp .zap/rules.tsv zap-out/rules.tsv
+          chmod -R 777 zap-out
+          # -I: warnings do not fail the job, only the FAIL rules in .zap/rules.tsv do.
+          docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t https://localhost:8443 -c rules.tsv -I \
+            -r zap-report.html -J zap-report.json -w zap-report.md
+
+      - name: Upload the ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: zap-out/zap-report.*
+          if-no-files-found: ignore
+
       - name: Show results in the job summary
         if: always()
         run: |
           {
             echo "## Staging deployment"
             echo "Image: \`${APMS_IMAGE:-not available}\`"
-            for log in smoke.log tls.log; do
+            for log in smoke.log tls.log zap-out/zap-report.md; do
               if [ -f "$log" ]; then
                 echo
                 echo "### $log"
