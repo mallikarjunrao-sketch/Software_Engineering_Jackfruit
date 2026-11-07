@@ -1,0 +1,10 @@
+# OWASP ZAP baseline rules (PARK-46). Columns: alert id, IGNORE|INFO|WARN|FAIL, name. Tab separated.
+# FAIL = the CD job fails. WARN = shown in the report only. Alerts not listed here default to WARN.
+10038	FAIL	(Content Security Policy (CSP) Header Not Set)
+10020	FAIL	(Missing Anti-clickjacking Header)
+10021	FAIL	(X-Content-Type-Options Header Missing)
+10035	FAIL	(Strict-Transport-Security Header Not Set)
+10063	FAIL	(Permissions Policy Header Not Set)
+90004	FAIL	(Insufficient Site Isolation Against Spectre Vulnerability)
+10098	FAIL	(Cross-Domain Misconfiguration)
+10055	WARN	(CSP weaknesses, review the report)

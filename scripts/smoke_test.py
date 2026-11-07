@@ -21,6 +21,17 @@ from urllib.parse import urlparse
 
 PASS, FAIL = "PASS", "FAIL"
 
+# PARK-46: headers that the ZAP baseline scan also looks for.
+SECURITY_HEADER_NAMES = (
+    "content-security-policy",
+    "x-content-type-options",
+    "x-frame-options",
+    "referrer-policy",
+    "permissions-policy",
+    "cross-origin-opener-policy",
+    "cache-control",
+)
+
 
 @dataclass
 class Reply:
@@ -108,6 +119,24 @@ class Smoke:
         if "strict-transport-security" not in self.get("GET", "/health").headers:
             return "Strict-Transport-Security header is missing"
 
+    def security_headers(self):
+        headers = self.get("GET", "/health").headers
+        missing = [name for name in SECURITY_HEADER_NAMES if name not in headers]
+        if missing:
+            return "missing: " + ", ".join(missing)
+
+    def page_has_csp(self, path):
+        reply = self.get("GET", path)
+        csp = reply.headers.get("content-security-policy", "")
+        if reply.status != 200 or "'sha256-" not in csp or "unsafe-inline" in csp:
+            return f"status {reply.status}, CSP: {csp or 'missing'}"
+
+    def docs_not_exposed(self):
+        statuses = {path: self.get("GET", path).status for path in ("/docs", "/redoc")}
+        open_pages = [path for path, status in statuses.items() if status == 200]
+        if open_pages:
+            return "still served: " + ", ".join(open_pages)
+
     def login(self, username, password, role):
         reply = self.get("POST", "/api/v1/auth/login", body={"username": username, "password": password})
         if reply.status != 200:
@@ -177,6 +206,10 @@ class Smoke:
     def run(self):
         self.check("health endpoint answers", self.health)
         self.check("HTTPS response has the HSTS header", self.hsts_header)
+        self.check("API responses carry the security headers", self.security_headers)
+        for page in ("/kiosk", "/board", "/dashboard"):
+            self.check(f"{page} page has a hash-based CSP", lambda page=page: self.page_has_csp(page))
+        self.check("Swagger and ReDoc pages are not exposed", self.docs_not_exposed)
         self.check("admin can log in", lambda: self.login("admin", self.admin_password, "ADMIN"))
         self.check("attendant can log in", lambda: self.login("attendant", self.attendant_password, "ATTENDANT"))
         self.check("wrong password is rejected (401)", self.wrong_password_rejected)
