@@ -10,11 +10,11 @@ from fastapi import (
     WebSocketDisconnect
 )
 
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
 from backend.app.errors import ApiError
+from backend.app.pages import html_page
 from backend.app.schemas import AvailabilityResponse
 from backend.app.services.availability import get_availability
 
@@ -118,7 +118,4 @@ async def availability_socket(
 )
 def display_board():
 
-    return FileResponse(
-        BOARD_PAGE,
-        media_type="text/html"
-    )
+    return html_page(BOARD_PAGE)

@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import Base, SessionLocal, engine
 from backend.app.errors import ApiError, api_error_handler
 from backend.app.https_enforcement import HTTPSEnforcementMiddleware
+from backend.app.security_headers import SecurityHeadersMiddleware
 from backend.app.routers import admin, auth, availability, billing, dashboard, kiosk, parking, reports, simulated
 from backend.app.seed import seed_database
 
@@ -16,7 +18,20 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Automated Parking Management System", version="1.0.0", lifespan=lifespan)
+APP_ENV = os.getenv("APP_ENV", "dev")
+
+
+def docs_settings(app_env: str) -> dict:
+    """The Swagger and ReDoc pages are only for development: they load scripts from a CDN and list every route."""
+    return {} if app_env == "dev" else {"docs_url": None, "redoc_url": None}
+
+
+app = FastAPI(
+    title="Automated Parking Management System",
+    version="1.0.0",
+    lifespan=lifespan,
+    **docs_settings(APP_ENV),
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["null", "http://127.0.0.1:8000", "http://localhost:8000"],
@@ -26,6 +41,8 @@ app.add_middleware(
 )
 app.add_exception_handler(ApiError, api_error_handler)
 app.add_middleware(HTTPSEnforcementMiddleware)
+# Added last so it is the outermost layer and also covers the HTTPS redirect and refusal responses.
+app.add_middleware(SecurityHeadersMiddleware, skip_paths=("/docs", "/redoc") if APP_ENV == "dev" else ())
 app.include_router(parking.router)
 app.include_router(billing.router)
 app.include_router(admin.router)

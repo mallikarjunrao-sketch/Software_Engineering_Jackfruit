@@ -25,6 +25,8 @@
   textarea { min-height: 80px; }
   button.primary { margin-top: 14px; padding: 11px 22px; border: 0; border-radius: 8px; background: var(--brand); color: var(--brand-text); font-size: 1rem; cursor: pointer; }
   button.secondary { margin-top: 14px; margin-left: 8px; padding: 11px 22px; border: 1px solid var(--brand); border-radius: 8px; background: #fff; color: var(--brand); font-size: 1rem; cursor: pointer; }
+  button.flush { margin: 0; }
+  button.flush-left { margin-left: 0; }
   button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #4c8dff; outline-offset: 2px; }
   .msg { margin-top: 14px; padding: 10px 14px; border-radius: 8px; display: none; }
   .msg.show { display: block; }
@@ -52,7 +54,7 @@
   <h1>APMS Staff Dashboard</h1>
   <span id="who" class="badge hidden"></span>
   <span id="live" class="badge hidden" role="status" aria-live="polite">Connecting</span>
-  <button id="logout" class="secondary hidden" type="button" style="margin:0">Log out</button>
+  <button id="logout" class="secondary flush hidden" type="button">Log out</button>
 </header>
 <main>
   <section id="login-card" class="card">
@@ -114,7 +116,7 @@
         <h3>Override (lost ticket or recognition failure)</h3>
         <label for="override-reason">Reason</label>
         <textarea id="override-reason" placeholder="Explain why the override is needed"></textarea>
-        <button id="override-btn" class="secondary" type="button" style="margin-left:0">Override exit</button>
+        <button id="override-btn" class="secondary flush-left" type="button">Override exit</button>
       </div>
     </section>
 
