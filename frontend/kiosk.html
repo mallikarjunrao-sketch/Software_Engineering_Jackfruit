@@ -189,6 +189,31 @@
     if (result.code === "LOW_CONFIDENCE" || result.code === "UNREADABLE_IMAGE") plateEl.focus();
   }
 
+  // API timestamps without an explicit timezone are stored as UTC.
+  // Interpret them as UTC, then display them in Indian Standard Time.
+  function formatApiTime(value) {
+    if (value === null || value === undefined || value === "") return "-";
+
+    let timestamp = value;
+    if (
+      typeof value === "string" &&
+      !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)
+    ) {
+      timestamp = `${value}Z`;
+    }
+
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return String(value);
+
+    return date.toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  }
+
   async function submitEntry() {
     clearMessage();
     const body = plateBody($("entry-image"), $("entry-plate"));
@@ -207,7 +232,7 @@
       Ticket: ticket.ticketNo,
       Plate: ticket.plate,
       Slot: ticket.slotId,
-      Time: new Date(ticket.entryTime).toLocaleTimeString()
+      Time: formatApiTime(ticket.entryTime)
     });
   }
 
